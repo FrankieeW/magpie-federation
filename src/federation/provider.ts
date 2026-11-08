@@ -6,6 +6,8 @@ export interface ProviderDescriptor {
   server: string;
   source: string;
   name: string;
+  icon?: string;
+  iconSource?: "remote" | "builtin";
 }
 
 interface HostInput {

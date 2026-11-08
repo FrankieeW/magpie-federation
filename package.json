@@ -1,6 +1,6 @@
 {
   "name": "magpie-federation",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "Bring remote Magpie providers and MCP servers into native lists with their source identities.",
   "license": "Apache-2.0",
   "type": "module",
@@ -12,6 +12,9 @@
     "index.ts",
     "src/federation",
     "src/machine/cli.ts",
+    "src/machine/locate.ts",
+    "src/server/owner.ts",
+    "page",
     "scripts/federation.ts",
     "README.md"
   ],
@@ -43,7 +46,14 @@
     "url": "https://github.com/FrankieeW/magpie-federation/issues"
   },
   "magpie": {
-    "name": "Magpie Federation",
+    "name": "远端连接",
+    "page": {
+      "title": "Remote Dashboard",
+      "titles": { "zh": "远端看板" },
+      "file": "page/index.html",
+      "icon": "page/icon.svg",
+      "service": { "port": 3487, "option": "port" }
+    },
     "summary": {
       "en": "Import each remote provider separately with its server and source, and connect MCP as a hub or as separate namespaces.",
       "zh": "将远端各家供应商分别接入原生列表，保留服务器与来源。MCP 可整台接入，也可按命名空间分别接入。"

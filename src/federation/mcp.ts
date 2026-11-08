@@ -1,6 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { isRecord, loadFederation, type FederationConfig, type ServerConfig } from "./config.ts";
+import { isRecord, loadFederation, saveFederation, type FederationConfig, type ServerConfig } from "./config.ts";
 import { boundedJson, boundedText, remoteRequest } from "./catalog.ts";
+import { localRequest, providerHandler } from "./proxy.ts";
+import { dashboardHandler } from "./dashboard.ts";
 
 export interface McpDescriptor {
   server: string;
@@ -91,8 +93,7 @@ function validToken(received: string, token: string): boolean {
 export function mcpHandler(path: string, port: number) {
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
-    if (![`127.0.0.1:${port}`, `localhost:${port}`].includes(request.headers.get("host") ?? "") ||
-      request.headers.has("origin") || [...request.headers.keys()].some((name) => name.startsWith("sec-fetch-") || name.startsWith("x-forwarded-") || name === "forwarded")) {
+    if (!localRequest(request, port)) {
       return new Response("Forbidden", { status: 403 });
     }
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -100,6 +101,7 @@ export function mcpHandler(path: string, port: number) {
     if (!match) return new Response("Not found", { status: 404 });
     try {
       const config = await loadFederation(path);
+      if (!config.enabled || config.mode !== "full") return new Response("Full integration is disabled", { status: 403 });
       if (!validToken(match[1]!, config.token)) return new Response("Forbidden", { status: 403 });
       const server = config.servers.find((item) => item.id === match[2]);
       if (!server || server.mcp === false) return new Response("Not found", { status: 404 });
@@ -142,13 +144,31 @@ export async function startFederation(path: string): Promise<{ stop(): void } | 
   const existing = running.get(path);
   if (existing) return existing;
   const config = await loadFederation(path);
-  if (!config.servers.some((server) => server.mcp !== false)) return undefined;
-  if (!config.token) throw new Error("请先运行 magpie-federation sync 生成 MCP 连接令牌");
+  if (!config.token) await saveFederation(config, path);
   let server: ReturnType<typeof Bun.serve> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const mcp = mcpHandler(path, config.port);
+  const provider = providerHandler(path, config.port);
+  const dashboard = dashboardHandler(path, config.port);
+  const identity = createHash("sha256").update(path).digest("hex");
   const listen = () => {
     try {
-      server = Bun.serve({ hostname: "127.0.0.1", port: config.port, fetch: mcpHandler(path, config.port) });
+      server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: config.port,
+        maxRequestBodySize: 64 * 1024 * 1024,
+        fetch: (request, serverContext) => {
+          const pathname = new URL(request.url).pathname;
+          if (pathname === "/healthz") {
+            return localRequest(request, config.port)
+              ? Response.json({ name: "magpie-federation", providerProxy: true, version: "0.5.0", config: identity })
+              : new Response("Forbidden", { status: 403 });
+          }
+          if (pathname.startsWith("/provider/")) return provider(request);
+          if (pathname.startsWith("/mcp/")) return mcp(request);
+          return dashboard(request, serverContext.requestIP(request)?.port);
+        },
+      });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
       // A CLI host and the serving host can overlap during plugin reload.

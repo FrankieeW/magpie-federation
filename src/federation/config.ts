@@ -18,6 +18,8 @@ export interface FederationConfig {
   port: number;
   token: string;
   servers: ServerConfig[];
+  enabled: boolean;
+  mode: "lite" | "full";
 }
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -58,6 +60,10 @@ export function parseFederation(value: unknown): FederationConfig {
   if (typeof token !== "string" || (token !== "" && !/^[a-f0-9]{64}$/.test(token))) throw new Error("token 必须是 64 位随机十六进制字符串");
   const entries = value.servers ?? value.remotes ?? [];
   if (!Array.isArray(entries)) throw new Error("servers 必须是数组");
+  const enabled = value.enabled ?? true;
+  const mode = value.mode ?? (entries.length ? "full" : "lite");
+  if (typeof enabled !== "boolean") throw new Error("enabled 必须是布尔值");
+  if (mode !== "lite" && mode !== "full") throw new Error("mode 必须是 lite 或 full");
   const seen = new Set<string>();
   const servers = entries.map((entry): ServerConfig => {
     if (!isRecord(entry) || typeof entry.id !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(entry.id) || seen.has(entry.id)) {
@@ -83,7 +89,7 @@ export function parseFederation(value: unknown): FederationConfig {
       mcp,
     };
   });
-  return { port: Number(port), token, servers };
+  return { port: Number(port), token, servers, enabled, mode };
 }
 
 export async function loadFederation(path = configurationPath()): Promise<FederationConfig> {

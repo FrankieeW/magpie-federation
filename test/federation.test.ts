@@ -146,7 +146,7 @@ describe("Federation configuration and synchronization", () => {
     expect(await Bun.file(path).exists()).toBe(false);
   });
 
-  test("registers every supplier separately using managed local credentials", async () => {
+  test("registers separate native connections without copying the remote key", async () => {
     const upstream = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() { return Response.json({ data: [{ id: "codex/gpt-5" }, { id: "deepseek/v4" }] }); } });
     servers.push(upstream);
     const path = await temporary();
@@ -154,14 +154,13 @@ describe("Federation configuration and synchronization", () => {
     const result = await syncFederation(path, async (args) => { commands.push([...args]); return { code: 0, stdout: "", stderr: "" }; }, parseFederation({ servers: [{ id: "vps", url: upstream.url.origin, key: "secret-must-stay-in-config", mcp: false }] }), { XDG_CONFIG_HOME: dirname(path) });
     expect(result.providers.map((provider) => provider.source)).toEqual(["codex", "deepseek"]);
     expect(commands[0]?.slice(0, 2)).toEqual(["plugin", "add"]);
-    const accounts: string[] = [];
-    for (const descriptor of result.providers) {
-      const hooks = createProvider({ client: { auth: { async set(options) { accounts.push(options.path.id); } } } }, path, descriptor);
-      await hooks.config({});
-    }
-    expect(accounts).toEqual(result.providers.map((provider) => provider.id));
+    const connections = commands.filter((args) => args[0] === "provider");
+    expect(connections).toHaveLength(2);
+    expect(connections.every((args) => args[1] === "add" && args[2] === "remote-magpie")).toBe(true);
+    expect(connections[0]).toContain(`id=${result.providers[0]!.id}`);
+    expect(connections[0]?.some((arg) => arg.endsWith("/provider/vps/codex"))).toBe(true);
     expect(JSON.stringify(commands)).not.toContain("secret-must-stay-in-config");
-    expect(await readFile(join(path, "../providers/index.mjs"), "utf8")).not.toContain("secret-must-stay-in-config");
+    expect(await readFile(join(dirname(path), "runtime/index.mjs"), "utf8")).not.toContain("secret-must-stay-in-config");
   });
 
   test("keeps existing MCP assignments and tool settings when synchronizing again", async () => {

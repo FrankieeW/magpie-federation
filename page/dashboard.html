@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN" data-session="__DASHBOARD_TOKEN__">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>远端看板</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div><span class="eyebrow">MAGPIE FEDERATION</span><h1>远端看板</h1><p id="connection" role="status">正在自动连接…</p></div>
+    <div class="controls">
+      <label class="master"><input id="enabled" type="checkbox" role="switch"><span>启用</span></label>
+      <label>模式<select id="mode"><option value="lite">Lite</option><option value="full">完整</option></select></label>
+    </div>
+  </header>
+  <section class="mode-note" id="mode-note"></section>
+  <div id="message" class="message" role="status" hidden></div>
+  <nav class="toolbar">
+    <label>服务器<select id="server"></select></label>
+    <div class="spacer"></div>
+    <label>时间<select id="period"><option value="today">今天</option><option value="7d">近 7 天</option><option value="30d">近 30 天</option><option value="all">全部</option></select></label>
+    <button id="refresh" type="button">刷新</button>
+  </nav>
+  <main id="content">
+    <section id="totals" class="totals" aria-label="远端用量概览"></section>
+    <section><div class="section-title"><h2>额度与余额</h2><span id="quota-count"></span></div><div id="quotas" class="quota-grid"></div></section>
+    <section><div class="section-title"><h2>供应商与模型</h2><span id="model-count"></span></div><div id="models" class="model-groups"></div></section>
+  </main>
+  <footer><span id="updated"></span><span>凭据由本机服务保存，自动读取远端数据</span></footer>
+</body>
+</html>

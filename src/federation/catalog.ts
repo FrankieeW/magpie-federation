@@ -113,7 +113,7 @@ export async function discoverProviders(server: ServerConfig, fetcher: Fetcher =
   if (cache && existing && existing.expires > Date.now()) return existing.result;
   const result = (async () => {
     const response = await remoteRequest(server, "models", {
-      headers: { "x-magpie-prices": "1" },
+      headers: { "x-magpie-prices": "1", "x-magpie-drawers": "1", "x-magpie-videomakers": "1", "x-magpie-deciders": "1" },
       ...(signal ? { signal } : {}),
     }, fetcher);
     if (!response.ok) {
