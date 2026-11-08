@@ -1,0 +1,68 @@
+{
+  "name": "magpie-route-inspector",
+  "version": "0.1.0",
+  "description": "Observe Magpie routes across machines, and combine model pools between Magpies.",
+  "type": "module",
+  "main": "./index.ts",
+  "files": [
+    "index.ts",
+    "src",
+    "public",
+    "page",
+    "scripts/start.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "bun scripts/start.ts",
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json && tsc -p src/ui/tsconfig.json",
+    "sandbox": "bun scripts/sandbox.ts",
+    "e2e": "bun scripts/e2e-ui.ts"
+  },
+  "engines": {
+    "bun": ">=1.2.0",
+    "magpie": ">=0.1.3285"
+  },
+  "keywords": [
+    "magpie",
+    "magpie-plugin",
+    "magpie-page",
+    "routing",
+    "model-pool",
+    "llm-gateway"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FrankieeW/magpie-route-inspector.git"
+  },
+  "homepage": "https://github.com/FrankieeW/magpie-route-inspector#readme",
+  "bugs": {
+    "url": "https://github.com/FrankieeW/magpie-route-inspector/issues"
+  },
+  "magpie": {
+    "name": "路由观测",
+    "page": {
+      "title": "Route Inspector",
+      "titles": {
+        "zh": "路由观测"
+      },
+      "file": "page/index.html",
+      "service": {
+        "port": 3487,
+        "option": "port"
+      }
+    },
+    "options": {
+      "port": 3487
+    },
+    "summary": {
+      "en": "See where each request went across machines (tries, fallbacks, usage), and combine model pools between Magpies: add a remote pool to a local one, or the reverse, with preview and undo.",
+      "zh": "查看请求跨机器的路由（尝试、回退、用量），并在多台 Magpie 之间组合模型池：把远端池子加进本机池子，或反过来；修改前预览，可撤销。"
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "playwright-core": "^1.65.0",
+    "typescript": "5"
+  }
+}

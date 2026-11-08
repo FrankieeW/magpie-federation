@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN" data-api-token="__INSPECTOR_API_TOKEN__" data-host-theme="__INSPECTOR_THEME__">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Magpie · 路由观测</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">M<span></span></span><div><p class="eyebrow">MAGPIE / ROUTE INSPECTOR</p><h1>路由与模型池</h1><p class="subtitle">追踪远端会话的路由与回退，并在多台 Magpie 之间组合模型池。</p></div></div>
+      <button class="button subtle theme-button" id="theme-toggle" type="button" aria-label="切换明暗主题">跟随系统</button>
+    </header>
+
+    <nav class="view-tabs" role="tablist" aria-label="页面视图">
+      <button class="view-tab" id="tab-observe" type="button" role="tab" aria-selected="true" aria-controls="view-observe">路由观测</button>
+      <button class="view-tab" id="tab-pools" type="button" role="tab" aria-selected="false" aria-controls="view-pools">模型池</button>
+    </nav>
+
+    <div id="view-observe" role="tabpanel" aria-labelledby="tab-observe">
+      <section class="scope-panel" aria-labelledby="scope-title">
+        <div class="section-heading"><h2 id="scope-title">观测范围</h2><span class="badge info">会话最新记录</span></div>
+        <p>仅查看指定远端会话的最新路由；同一会话的新请求会替换旧记录，不能据此确认本机请求与远端请求一一对应。每个观测会保留最近几条已看到的路由。</p>
+        <p class="scope-footnote">费用未知不等于零价；跨层记录可能重复，不跨层求和。</p>
+      </section>
+
+      <main>
+        <section class="add-panel" aria-labelledby="add-title">
+          <div class="section-heading"><div><p class="eyebrow">LIVE OBSERVATIONS</p><h2 id="add-title">添加独立观测</h2></div><span class="count-label" id="observation-count">0 个观测</span></div>
+          <div id="observation-form" class="observation-form">
+            <label class="field"><span>远端实例</span><select id="remote-select" name="remote" required disabled><option value="">正在读取远端…</option></select></label>
+            <label class="field session-field"><span>会话 ID</span><input id="session-input" name="session" type="text" placeholder="输入请求使用的 session ID" required autocomplete="off" spellcheck="false" aria-describedby="session-help"></label>
+            <button id="add-observation" class="button primary" type="button" disabled><span aria-hidden="true">＋</span> 添加观测</button>
+          </div>
+          <div class="form-footer"><p id="session-help">使用原始会话 ID（最多 128 个 UTF-8 字节）；各个观测独立连接，可随时停止。</p><button id="reload-remotes" class="text-button" type="button">重新读取远端</button></div>
+          <p class="form-message" id="form-message" role="status" hidden></p>
+          <div class="configuration-state" id="configuration-state" role="status">正在读取服务端远端配置…</div>
+        </section>
+
+        <div class="observations-heading"><h2>观测面板</h2><p>路由变化自动更新 · 每个会话独立长轮询</p></div>
+        <div id="empty-state" class="empty-state"><div class="empty-orbit" aria-hidden="true">↗</div><h3>等待第一条观测</h3><p>选择已配置的远端并输入会话 ID。请求开始后，真实路由与回退过程将在这里出现。</p><p class="muted">会话尚无路由时会保持等待，不会生成示例数据。</p></div>
+        <div id="observations" class="observations"></div>
+      </main>
+    </div>
+
+    <div id="view-pools" role="tabpanel" aria-labelledby="tab-pools" hidden>
+      <section class="scope-panel" aria-labelledby="pools-title">
+        <div class="section-heading"><h2 id="pools-title">跨机器组合模型池</h2><button id="pools-refresh" class="text-button" type="button">刷新</button></div>
+        <p>把另一台 Magpie 的模型或整个池子加进这台的池子，反过来也可以。修改通过各自机器上的 <code>magpie group set</code> 完成：先预览，确认后执行，可随时撤销。</p>
+        <p class="scope-footnote">只列出目标机器的 Magpie 实际提供的成员；会绕回目标机器自身的池子，Magpie 不会提供，因此不会形成跨机器循环。</p>
+      </section>
+      <p class="form-message" id="pools-message" role="status" hidden></p>
+      <div id="pools-machines" class="machines" aria-live="polite"></div>
+    </div>
+
+    <noscript><p class="configuration-state error">此页面需要 JavaScript。请启用 JavaScript 后重新打开。</p></noscript>
+    <footer class="app-footer"><span>MAGPIE ROUTE INSPECTOR</span><span>连接凭据仅保存在服务端 · 会话观测不写入浏览器存储</span></footer>
+  </div>
+  <dialog id="pool-dialog" class="pool-dialog" aria-labelledby="pool-dialog-title"></dialog>
+</body>
+</html>
