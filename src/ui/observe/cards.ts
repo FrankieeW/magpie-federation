@@ -39,8 +39,11 @@ const HISTORY = 8;
 const el = {
   remote: byId<HTMLSelectElement>("remote-select"),
   session: byId<HTMLInputElement>("session-input"),
+  sessions: byId<HTMLDataListElement>("session-options"),
+  sessionNote: byId("session-note"),
   add: byId<HTMLButtonElement>("add-observation"),
   reload: byId<HTMLButtonElement>("reload-remotes"),
+  reloadSessions: byId<HTMLButtonElement>("reload-sessions"),
   configuration: byId("configuration-state"),
   message: byId("form-message"),
   count: byId("observation-count"),
@@ -130,6 +133,7 @@ function renderSnapshotNote(card: Card): void {
   const notes: string[] = [];
   if (card.data && !card.active) notes.push("观测已停止：以下为最后一次成功读取的快照。");
   else if (card.data && card.error) notes.push("连接异常：以下为最后一次成功读取的快照，尚未确认远端当前状态。");
+  if (card.data?.historyWarning) notes.push(card.data.historyWarning);
   if (card.resets > 0) notes.push(`已接受 ${card.resets} 次序号回退；远端可能重启或清空了路由缓存。`);
   card.snapshotNote.textContent = notes.join(" ");
   card.snapshotNote.hidden = notes.length === 0;
@@ -145,7 +149,8 @@ function renderEvidence(card: Card): void {
     ["路由时间", dateTime(route?.time)],
     ["观测时间", dateTime(card.data?.observedAt)],
     ["用量读取", dateTime(card.data?.usage?.observedAt)],
-    ["路由来源", "远端 /v1/magpie/route（会话最新记录）"],
+    ["路由来源", "远端 /v1/magpie/route（会话最新记录）；更早的是本插件已经看到并记下的"],
+    ["本机关联", card.data?.link ? `${card.data.link.state} · ${card.data.link.note}` : "尚未对照"],
     ["用量来源", "远端用量 API（近 30 天 / 当前路由 ID，路由完成后读取）"],
   ];
   card.evidenceValues.replaceChildren(...values.flatMap(([label, value]) => [node("dt", "", label), node("dd", "", value)]));
@@ -161,6 +166,15 @@ function renderCard(card: Card): void {
 }
 
 /** The routes before `next`: the one it replaces joins them, newest first, each id once. */
+function recorded(value: unknown): Route[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter((item): item is Route => {
+    if (!item || typeof item !== "object") return false;
+    const route = item as Route;
+    return Number.isSafeInteger(route.id) && typeof route.time === "string" && Array.isArray(route.tries);
+  });
+}
+
 function nextHistory(card: Card, next: Observation): readonly Route[] {
   const previous = card.data?.route;
   if (!previous || !next.route || previous.id === next.route.id) return card.history;
@@ -199,7 +213,8 @@ async function poll(card: Card, generation: number, signal: AbortSignal): Promis
       if (card.data && data.seq < previousSeq) card.resets += 1;
       // Sequence numbers belong to the remote's process: a lower one after a
       // restart is accepted as the new truth.
-      card.history = nextHistory(card, data);
+      const earlier = recorded(data.earlier);
+      card.history = earlier ?? nextHistory(card, data);
       card.seq = data.seq;
       card.data = data;
       card.error = null;
@@ -335,6 +350,36 @@ function addObservation(): void {
   createObservation(remote, session);
 }
 
+interface SessionBrief { id?: unknown; agent?: unknown; model?: unknown }
+
+export async function loadSessions(): Promise<void> {
+  el.reloadSessions.disabled = true;
+  try {
+    const data = await getJson<{ state?: string; sessions?: SessionBrief[]; message?: string }>("sessions");
+    const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+    el.sessions.replaceChildren();
+    let shown = 0;
+    for (const session of sessions) {
+      if (!session || typeof session.id !== "string" || !session.id) continue;
+      const option = node("option");
+      option.value = session.id;
+      const bits = [session.agent, session.model].filter((item): item is string => typeof item === "string" && item.trim() !== "");
+      if (bits.length) option.label = bits.join(" · ");
+      el.sessions.append(option);
+      shown += 1;
+    }
+    el.sessionNote.hidden = false;
+    if (data?.state === "ready" && shown === 0) el.sessionNote.textContent = "本机最近的路由里没有带会话 ID 的记录。这样的请求无法在这里关联，请从客户端复制会话 ID。";
+    else if (data?.state === "ready") el.sessionNote.textContent = `本机最近 ${shown} 个带会话 ID 的路由，可在输入框中选择。`;
+    else el.sessionNote.textContent = data?.message || "读不到本机会话，请手填会话 ID。";
+  } catch (error) {
+    el.sessionNote.hidden = false;
+    el.sessionNote.textContent = `读不到本机会话：${scalar((error as Error).message)} 仍可以手填会话 ID。`;
+  } finally {
+    el.reloadSessions.disabled = false;
+  }
+}
+
 export function setupObservations(): void {
   el.add.addEventListener("click", addObservation);
   el.session.addEventListener("keydown", (event) => {
@@ -344,6 +389,7 @@ export function setupObservations(): void {
     }
   });
   el.reload.addEventListener("click", () => void loadRemotes());
+  el.reloadSessions.addEventListener("click", () => void loadSessions());
   window.addEventListener("pagehide", () => {
     pageHidden = true;
     remotesGeneration += 1;
@@ -363,4 +409,5 @@ export function setupObservations(): void {
     }
   });
   void loadRemotes();
+  void loadSessions();
 }

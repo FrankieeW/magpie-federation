@@ -12,13 +12,16 @@ import { loadConfig, type ConfigOptions } from "./config.ts";
 import { InspectorError, isObject } from "./errors.ts";
 import { errorResponse, jsonResponse, readJson } from "./http.ts";
 import { health, listen } from "./listen.ts";
+import { correlate, costRollup, type RemoteRef } from "./correlate.ts";
+import { fetchTrace, parseTrace } from "./local-trace.ts";
 import { observe } from "./observe.ts";
+import { fileRouteJournal, memoryRouteJournal, type RouteJournal } from "./routes-journal.ts";
 import { cachedSameUser, sameUserCheck, type SameUser } from "./owner.ts";
 import { poolsApi } from "./pools-api.ts";
 import { uiBundle } from "./ui-bundle.ts";
 
 const PUBLIC = fileURLToPath(new URL("../../public/", import.meta.url));
-const CAPABILITIES = { mode: "session-latest", crossMachineCorrelation: false, historyComplete: false, pools: true };
+const CAPABILITIES = { mode: "session-latest", crossMachineCorrelation: true, historyComplete: false, pools: true };
 // What a reverse proxy or tunnel adds. Magpie's own page-service proxy
 // (magpie web) strips these, so a request carrying one came through
 // something else in front of this loopback service, and is refused.
@@ -31,6 +34,12 @@ export interface ConsoleOptions extends ConfigOptions {
   readonly frameAncestors?: readonly string[];
   /** Who may use the console; undefined is this platform's check, null none. */
   readonly sameUser?: SameUser | null;
+  /** Where seen routes are kept. Unset keeps them in memory for this process. */
+  readonly routesPath?: string;
+  /** This machine's gateway, for its recent routes. Unset does not call one. */
+  readonly gatewayBase?: string;
+  /** Replaces the gateway read. Tests pass a trace body. */
+  readonly readTrace?: () => Promise<unknown>;
 }
 
 // Who may frame the page: Magpie's own window (wails://localhost on macOS and
@@ -80,6 +89,16 @@ function securityHeaders(request: Request, port: number, ancestors: string): Hea
   return headers;
 }
 
+function remoteRef(remoteId: string, route: { time: string; responseId?: string; asked: string; model?: string }): RemoteRef {
+  return {
+    remoteId,
+    time: route.time,
+    asked: route.asked,
+    ...(route.responseId ? { responseId: route.responseId } : {}),
+    ...(route.model ? { model: route.model } : {}),
+  };
+}
+
 function routeArguments(url: URL): { remote: string; session: string; after: number; wait: number } {
   const remote = url.searchParams.get("remote") || "";
   const session = (url.searchParams.get("session") || "").trim();
@@ -112,6 +131,26 @@ export async function startConsole(options: ConsoleOptions): Promise<RunningCons
   const sameUser = check ? cachedSameUser(check) : null;
   const shutdown = new AbortController();
   const pools = poolsApi(options.pools, async () => (await loadConfig(options)).remotes);
+  const routes: RouteJournal = options.routesPath ? fileRouteJournal(options.routesPath) : memoryRouteJournal();
+  const readTrace = options.readTrace ?? (options.gatewayBase ? () => fetchTrace(options.gatewayBase as string) : undefined);
+  let traceCache: { at: number; body: unknown } | undefined;
+  let traceFlight: Promise<unknown> | undefined;
+  const localTrace = async (): Promise<unknown> => {
+    if (!readTrace) throw new InspectorError("offline", "未连接本机网关", 502);
+    const now = Date.now();
+    if (traceCache && now - traceCache.at < 2000) return traceCache.body;
+    if (!traceFlight) {
+      traceFlight = readTrace()
+        .then((body) => {
+          traceCache = { at: Date.now(), body };
+          return body;
+        })
+        .finally(() => {
+          traceFlight = undefined;
+        });
+    }
+    return traceFlight;
+  };
   let boundPort = port;
 
   const api = async (request: Request, url: URL): Promise<Response> => {
@@ -120,11 +159,40 @@ export async function startConsole(options: ConsoleOptions): Promise<RunningCons
       const { remotes } = await loadConfig(options);
       return jsonResponse({ remotes: remotes.map(({ id, name, peer }) => ({ id, name, peer: Boolean(peer) })), capabilities: CAPABILITIES });
     }
+    if (route === "GET /api/sessions") {
+      if (!readTrace) return jsonResponse({ state: "unavailable", sessions: [], message: "未连接本机网关，会话需要手填。" });
+      try {
+        const { sessions } = parseTrace(await localTrace());
+        return jsonResponse({ state: "ready", sessions });
+      } catch (error) {
+        const failure = error instanceof InspectorError ? error : new InspectorError("offline", "无法读取本机路由");
+        return jsonResponse({ state: failure.state, sessions: [], message: failure.message });
+      }
+    }
     if (route === "GET /api/route") {
       const args = routeArguments(url);
       const remote = (await loadConfig(options)).remotes.find((item) => item.id === args.remote);
       if (!remote) throw new InspectorError("error", "未找到配置的远端", 404);
-      return jsonResponse(await observe(remote, args.session, args.after, args.wait, [request.signal, shutdown.signal]));
+      const traced = localTrace()
+        .then((body) => parseTrace(body).hops.filter((hop) => hop.session === args.session))
+        .catch(() => undefined);
+      const seen = await observe(remote, args.session, args.after, args.wait, [request.signal, shutdown.signal]);
+      const hops = await traced;
+      const link = !seen.route
+        ? { state: "unmatched" as const, note: "远端这条会话还没有路由，无从关联。" }
+        : hops
+          ? correlate(remoteRef(args.remote, seen.route), hops)
+          : { state: "unavailable" as const, note: "读不到本机路由，这一跳无法与远端对照。" };
+      let historyWarning: string | undefined;
+      if (seen.route) {
+        try {
+          await routes.record(args.remote, args.session, seen.route);
+        } catch {
+          historyWarning = "这次路由没能写入本机记录，刷新后可能看不到。";
+        }
+      }
+      const earlier = await routes.earlier(args.remote, args.session, seen.route?.id ?? null).catch(() => []);
+      return jsonResponse({ ...seen, link, rollup: costRollup(link, seen.usage), earlier, ...(historyWarning ? { historyWarning } : {}) });
     }
     if (route === "GET /api/pools") return jsonResponse({ machines: await pools.machines() });
     if (route === "POST /api/pools/preview") {

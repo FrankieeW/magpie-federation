@@ -1,9 +1,10 @@
 // Everything the plugin runs on one machine: the page's service, always, and
 // the peer API when this machine's configuration offers its pools.
 
+import { join } from "node:path";
 import type { Env } from "../machine/cli.ts";
 import { gatewayClient } from "../machine/gateway.ts";
-import { gatewayBase } from "../machine/locate.ts";
+import { gatewayBase, stateDir } from "../machine/locate.ts";
 import { localPools } from "../machine/local.ts";
 import { keyVerifier } from "../peer/auth.ts";
 import { startPeer, type RunningPeer } from "../peer/server.ts";
@@ -22,7 +23,14 @@ export async function startServices(options: Record<string, unknown> = {}, env: 
   const configOptions = options.config === undefined ? {} : { config: options.config };
   const pools = localPools(env, typeof options.magpieBin === "string" ? options.magpieBin : undefined);
   const peerConfig = await loadPeerConfig(configOptions, env);
-  const consoleService = await startConsole({ ...configOptions, port: options.port, pools, frameAncestors: frameAncestorsOf(options.frameAncestors) });
+  const consoleService = await startConsole({
+    ...configOptions,
+    port: options.port,
+    pools,
+    frameAncestors: frameAncestorsOf(options.frameAncestors),
+    routesPath: join(stateDir(env), "routes.jsonl"),
+    gatewayBase: gatewayBase(env),
+  });
   let peer: RunningPeer | undefined;
   try {
     peer = peerConfig

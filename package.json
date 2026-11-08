@@ -1,7 +1,8 @@
 {
   "name": "magpie-route-inspector",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Observe Magpie routes across machines, and combine model pools between Magpies.",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "./index.ts",
   "files": [

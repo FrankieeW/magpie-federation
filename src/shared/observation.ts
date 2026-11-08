@@ -21,6 +21,8 @@ export interface Route {
   status?: number;
   ms?: number;
   ttft_ms?: number;
+  /** The response id, when the route names one. Used only to match a local hop. */
+  responseId?: string;
   rule?: RuleHit | null;
   nested?: Nested[];
 }
@@ -47,11 +49,40 @@ export interface UsageRow {
 
 export interface Usage { state: string; rows: UsageRow[]; message?: string; observedAt?: string }
 
-export interface Observation {
+/** Whether this remote route is the same call as one local hop. Never a guess. */
+export interface Link {
+  readonly state: "matched" | "ambiguous" | "unmatched" | "unavailable";
+  readonly by?: "response-id" | "time-and-model";
+  readonly localRouteId?: number;
+  readonly note: string;
+}
+
+/**
+ * A sum across usage rows. `withheld` means there is no honest total.
+ * `deduped` counts only the remote's known rows for a matched call.
+ */
+export interface CostRollup {
+  readonly state: "withheld" | "deduped" | "partial";
+  readonly usd?: number;
+  readonly note: string;
+}
+
+/** What one read of a remote session returns, before it is compared with this computer. */
+export interface RemoteObservation {
   remote: string;
   session: string;
   seq: number;
   route: Route | null;
   observedAt: string;
   usage: Usage;
+}
+
+/** The console's answer: the remote read, plus how it relates to this computer. */
+export interface Observation extends RemoteObservation {
+  link: Link;
+  rollup: CostRollup;
+  /** Routes this plugin has already seen for the session, newest first, excluding the current one. */
+  earlier: Route[];
+  /** Set when the route was shown but could not be written to the local record. */
+  historyWarning?: string;
 }

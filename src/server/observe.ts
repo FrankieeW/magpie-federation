@@ -6,9 +6,9 @@ import type { RemoteConfig } from "./config.ts";
 import { InspectorError, isObject } from "./errors.ts";
 import { redact } from "./redact.ts";
 
-import type { Attempt, Cost, Observation, Route, RuleHit, Usage, UsageRow } from "../shared/observation.ts";
+import type { Attempt, Cost, RemoteObservation, Route, RuleHit, Usage, UsageRow } from "../shared/observation.ts";
 
-export type { Observation } from "../shared/observation.ts";
+export type { RemoteObservation } from "../shared/observation.ts";
 
 type Text = Record<string, unknown>;
 
@@ -58,6 +58,11 @@ function routeOf(value: unknown, remote: RemoteConfig): Route | null {
   }
   const route: Text = { id: value.id, time: redact(value.time, remote), asked: redact(value.asked, remote), tries: [], done: value.done };
   for (const key of ["kind", "group", "model", "served"]) copyText(route, value, key, remote);
+  const responseId = value.responseId ?? value.response_id;
+  if (typeof responseId === "string") {
+    const id = redact(responseId, remote, 128);
+    if (id) route.responseId = id;
+  }
   copyText(route, value, "error", remote, 2048);
   for (const key of ["status", "ms", "ttft_ms"]) copyNumber(route, value, key);
   if (Object.hasOwn(value, "rule")) {
@@ -156,7 +161,7 @@ async function fetchJSON(remote: RemoteConfig, endpoint: string, query: Record<s
   }
 }
 
-export async function observe(remote: RemoteConfig, session: string, after: number, wait: number, signals: (AbortSignal | undefined)[] = []): Promise<Observation> {
+export async function observe(remote: RemoteConfig, session: string, after: number, wait: number, signals: (AbortSignal | undefined)[] = []): Promise<RemoteObservation> {
   const data = await fetchJSON(remote, "magpie/route", { session, after: String(after), wait: String(wait) }, signals, (wait + 10) * 1000);
   if (!isObject(data) || data.session !== session || !integer(data.seq) || !Object.hasOwn(data, "route")) throw incompatible("路由响应");
   const route = routeOf(data.route, remote);

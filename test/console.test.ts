@@ -49,7 +49,7 @@ beforeAll(async () => {
       if (url.pathname === "/v1/magpie/route") return Response.json({
         session: url.searchParams.get("session"), seq: 7,
         route: {
-          id: 123, time: "2026-01-01T00:00:00Z", asked: "auto", kind: "title", done: mode !== "running", status: 200,
+          id: 123, time: "2026-01-01T00:00:00Z", asked: "auto", kind: "title", done: mode !== "running", status: 200, responseId: "resp-1",
           tries: [{ model: "provider/model", done: true, status: 200 }], private: secret,
           ...(mode === "no-rule" ? {} : { rule: rule(), nested: [{ group: "nested-group", name: "Nested group", rule: rule(), folder: "/private/nested" }, { group: "no-decision", rule: null }] }),
         },
@@ -138,7 +138,7 @@ describe("console service", () => {
     expect(remotes.headers.get("access-control-allow-origin")).toBe("null");
     expect(await remotes.json()).toEqual({
       remotes: [{ id: "remote", name: "Remote", peer: false }, { id: "vps", name: "vps", peer: true }, { id: "down", name: "Down", peer: true }],
-      capabilities: { mode: "session-latest", crossMachineCorrelation: false, historyComplete: false, pools: true },
+      capabilities: { mode: "session-latest", crossMachineCorrelation: true, historyComplete: false, pools: true },
     });
   });
 
@@ -212,8 +212,51 @@ describe("console service", () => {
     expect(result.usage.rows.map((item: { cost: { state: string } }) => item.cost.state)).toEqual(["unknown", "known-zero", "estimated"]);
     expect(result.usage.rows[0].accountAlias).toBe("Team account");
     expect(result.usage.rows[2].handedOn).toBe(true);
+    expect(result.route.responseId).toBe("resp-1");
+    expect(result.link).toEqual({ state: "unavailable", note: "读不到本机路由，这一跳无法与远端对照。" });
+    expect(result.rollup.state).toBe("withheld");
+    expect(result.earlier).toEqual([]);
     expect((await api(`api/route?remote=remote&session=${"x".repeat(129)}`)).status).toBe(400);
     expect((await api("api/route?remote=remote&session=session-1&wait=26")).status).toBe(400);
+  });
+
+  test("lists nothing from a gateway it was not given", async () => {
+    expect(await json(await api("api/sessions"))).toEqual({ state: "unavailable", sessions: [], message: "未连接本机网关，会话需要手填。" });
+  });
+
+  test("correlates one local hop by response id and remembers the route", async () => {
+    const traced = {
+      routes: [{
+        id: 9, time: "2026-01-01T00:00:00.000Z", session: "session-1", agent: "dsh",
+        provider: "remote", model: "remote/provider/model", ms: 1500, responseId: "resp-1",
+        tries: [{ id: "remote", model: "provider/model" }],
+        prompt: "do not keep", order: [{ who: "secret-account" }],
+      }, {
+        id: 8, time: "2025-12-31T00:00:00.000Z", session: "session-1", provider: "remote", model: "remote/old",
+        tries: [{ id: "remote", model: "old" }],
+      }],
+    };
+    const extra = await startConsole({
+      port: 0, config, readTrace: async () => traced,
+      pools: poolService({ readGroups: () => local.readGroups(), listModels: async () => [], run: (args) => local.run(args), journal: memoryJournal() }),
+    });
+    try {
+      const shell = await fetch(extra.url);
+      const extraToken = (await shell.text()).match(/data-api-token="([a-f0-9]+)"/)?.[1] ?? "";
+      const call = (path: string) => fetch(new URL(path, extra.url), { headers: { "X-Inspector-Token": extraToken } });
+      const sessions = await json(await call("api/sessions"));
+      expect(JSON.stringify(sessions)).not.toContain("do not keep");
+      expect(JSON.stringify(sessions)).not.toContain("secret-account");
+      expect(sessions.sessions.map((item: { id: string; routeId: number }) => [item.id, item.routeId])).toEqual([["session-1", 9]]);
+      const route = await json(await call("api/route?remote=remote&session=session-1&wait=0"));
+      expect(route.link).toEqual({ state: "matched", by: "response-id", localRouteId: 9, note: "与本机路由 9 的响应 ID 相同。" });
+      expect(route.rollup).toMatchObject({ state: "partial", usd: 0.25 });
+      expect(route.earlier).toEqual([]);
+      const again = await json(await call("api/route?remote=remote&session=session-1&wait=0"));
+      expect(again.earlier).toEqual([]);
+    } finally {
+      extra.stop();
+    }
   });
 
   test("does not ask for usage while the route is still under way", async () => {

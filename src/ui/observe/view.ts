@@ -1,7 +1,7 @@
 // How one observed route is drawn. Only what the remote returned is shown;
 // what it left out stays marked unknown and is never inferred.
 
-import type { Attempt, Cost, Observation, Route, RuleHit, Usage, UsageRow } from "../../shared/observation.ts";
+import type { Attempt, Cost, CostRollup, Link, Observation, Route, RuleHit, Usage, UsageRow } from "../../shared/observation.ts";
 import { badge, node, scalar } from "../dom.ts";
 import { clock, failure, httpStatus, milliseconds, money, tokenCount, dateTime } from "../format.ts";
 
@@ -170,7 +170,14 @@ function usageRow(row: UsageRow): HTMLTableRowElement {
   return item;
 }
 
-function renderUsage(usage: Usage | undefined): HTMLElement {
+const LINK_LABEL: Readonly<Record<Link["state"], [string, string]>> = {
+  matched: ["已关联本机", "success"],
+  ambiguous: ["无法唯一关联", "warning"],
+  unmatched: ["未关联", "warning"],
+  unavailable: ["本机未对照", ""],
+};
+
+function renderUsage(usage: Usage | undefined, rollup: CostRollup | undefined): HTMLElement {
   const section = node("section", "usage-section");
   const state = usage?.state || "error";
   const [label, kind] = USAGE_LABELS[state] ?? ["状态未知", "warning"];
@@ -201,7 +208,12 @@ function renderUsage(usage: Usage | undefined): HTMLElement {
     section.append(node("p", "unknown-note", USAGE_EMPTY[state] ?? "用量状态未知，无法确认费用。"));
   }
   if (usage?.message) section.append(node("p", "usage-note", usage.message));
-  section.append(node("p", "usage-note", "范围：近 30 天、当前路由。记录已按路由与可用的会话标识核对；跨层记录可能重复，不去重、不求和。"));
+  if (rollup) {
+    const amount = rollup.usd === undefined ? "" : `远端合计 ${money(rollup.usd)}。`;
+    section.append(node("p", "usage-note", `${amount}${rollup.note} 范围：近 30 天、当前路由。`));
+  } else {
+    section.append(node("p", "usage-note", "范围：近 30 天、当前路由。记录已按路由与可用的会话标识核对；跨层记录可能重复，不去重、不求和。"));
+  }
   return section;
 }
 
@@ -219,7 +231,10 @@ export function renderRoute(data: Observation): DocumentFragment {
   const summary = node("div", "route-summary");
   summary.append(badge(state, kind));
   if (route.kind) summary.append(badge(`附带调用 · ${route.kind}`, "info"));
+  if (data.link) summary.append(badge(LINK_LABEL[data.link.state]?.[0] ?? "关联未知", LINK_LABEL[data.link.state]?.[1] ?? "warning"));
   summary.append(node("p", "", httpStatus(route.status)));
+  fragment.append(summary);
+  if (data.link) fragment.append(node("p", "unknown-note", data.link.note));
   const responder = responderOf(route);
   const flow = node("div", "route-flow");
   flow.append(
@@ -231,7 +246,7 @@ export function renderRoute(data: Observation): DocumentFragment {
   );
   const metrics = node("div", "metrics");
   metrics.append(metric("总耗时", milliseconds(route.ms)), metric("首字延迟", milliseconds(route.ttft_ms)), metric("已记录尝试", String(route.tries.length)));
-  fragment.append(summary, flow, metrics, renderSelection(route), node("h3", "section-label attempts-label", "尝试顺序 / 回退链"));
+  fragment.append(flow, metrics, renderSelection(route), node("h3", "section-label attempts-label", "尝试顺序 / 回退链"));
   if (route.tries.length) {
     const list = node("ol", "attempts");
     route.tries.forEach((attempt, i) => list.append(renderAttempt(attempt, i, responder.confirmed && i === route.tries.length - 1)));
@@ -240,7 +255,7 @@ export function renderRoute(data: Observation): DocumentFragment {
     fragment.append(node("p", "unknown-note", "接口尚未记录任何尝试（tries 为空）。不据此推断模型选择、失败原因或最终回答者。"));
   }
   if (route.error) fragment.append(node("p", "route-error", `路由错误：${route.error}`));
-  fragment.append(renderUsage(data.usage));
+  fragment.append(renderUsage(data.usage, data.rollup));
   return fragment;
 }
 
@@ -248,7 +263,7 @@ export function renderRoute(data: Observation): DocumentFragment {
 export function renderHistory(history: readonly Route[]): HTMLElement | null {
   if (history.length === 0) return null;
   const section = node("section", "history");
-  section.append(node("h3", "section-label", `本观测已看到的更早路由（${history.length}）`));
+  section.append(node("h3", "section-label", `已记录的更早路由（${history.length}）`));
   const list = node("ol", "history-list");
   for (const route of history) {
     const [state, kind] = routeState(route);

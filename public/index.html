@@ -25,8 +25,8 @@
     <div id="view-observe" role="tabpanel" aria-labelledby="tab-observe">
       <section class="scope-panel" aria-labelledby="scope-title">
         <div class="section-heading"><h2 id="scope-title">观测范围</h2><span class="badge info">会话最新记录</span></div>
-        <p>仅查看指定远端会话的最新路由；同一会话的新请求会替换旧记录，不能据此确认本机请求与远端请求一一对应。每个观测会保留最近几条已看到的路由。</p>
-        <p class="scope-footnote">费用未知不等于零价；跨层记录可能重复，不跨层求和。</p>
+        <p>远端只返回这个会话的最新一条路由。本插件会把已经看到的记下，刷新或重启后仍在；没被看到过的请求不会补出来。</p>
+        <p class="scope-footnote">本机和远端能唯一对上时才关联，对不上会标明。关联上之后，费用只按远端实际执行的记录合计；未知费用不等于零价，也不会被算进去。</p>
       </section>
 
       <main>
@@ -34,10 +34,11 @@
           <div class="section-heading"><div><p class="eyebrow">LIVE OBSERVATIONS</p><h2 id="add-title">添加独立观测</h2></div><span class="count-label" id="observation-count">0 个观测</span></div>
           <div id="observation-form" class="observation-form">
             <label class="field"><span>远端实例</span><select id="remote-select" name="remote" required disabled><option value="">正在读取远端…</option></select></label>
-            <label class="field session-field"><span>会话 ID</span><input id="session-input" name="session" type="text" placeholder="输入请求使用的 session ID" required autocomplete="off" spellcheck="false" aria-describedby="session-help"></label>
+            <label class="field session-field"><span>会话 ID</span><input id="session-input" name="session" type="text" list="session-options" placeholder="选择本机会话，或粘贴 session ID" required autocomplete="off" spellcheck="false" aria-describedby="session-help"><datalist id="session-options"></datalist></label>
             <button id="add-observation" class="button primary" type="button" disabled><span aria-hidden="true">＋</span> 添加观测</button>
           </div>
-          <div class="form-footer"><p id="session-help">使用原始会话 ID（最多 128 个 UTF-8 字节）；各个观测独立连接，可随时停止。</p><button id="reload-remotes" class="text-button" type="button">重新读取远端</button></div>
+          <div class="form-footer"><p id="session-help">使用原始会话 ID（最多 128 个 UTF-8 字节）；各个观测独立连接，可随时停止。</p><button id="reload-sessions" class="text-button" type="button">本机会话</button><button id="reload-remotes" class="text-button" type="button">重新读取远端</button></div>
+          <p class="scope-footnote" id="session-note" hidden></p>
           <p class="form-message" id="form-message" role="status" hidden></p>
           <div class="configuration-state" id="configuration-state" role="status">正在读取服务端远端配置…</div>
         </section>
