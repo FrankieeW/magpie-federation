@@ -1,24 +1,26 @@
 {
-  "name": "magpie-route-inspector",
-  "version": "0.2.0",
-  "description": "Observe Magpie routes across machines, and combine model pools between Magpies.",
+  "name": "magpie-federation",
+  "version": "0.3.0",
+  "description": "Bring remote Magpie providers and MCP servers into native lists with their source identities.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./index.ts",
+  "bin": {
+    "magpie-federation": "./scripts/federation.ts"
+  },
   "files": [
     "index.ts",
-    "src",
-    "public",
-    "page",
-    "scripts/start.ts",
+    "src/federation",
+    "src/machine/cli.ts",
+    "scripts/federation.ts",
     "README.md"
   ],
   "scripts": {
-    "start": "bun scripts/start.ts",
+    "connect": "bun scripts/federation.ts connect",
+    "sync": "bun scripts/federation.ts sync",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json && tsc -p src/ui/tsconfig.json",
-    "sandbox": "bun scripts/sandbox.ts",
-    "e2e": "bun scripts/e2e-ui.ts"
+    "e2e": "bun scripts/e2e-federation.ts"
   },
   "engines": {
     "bun": ">=1.2.0",
@@ -27,38 +29,24 @@
   "keywords": [
     "magpie",
     "magpie-plugin",
-    "magpie-page",
     "routing",
-    "model-pool",
+    "federation",
+    "mcp",
     "llm-gateway"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/FrankieeW/magpie-route-inspector.git"
+    "url": "git+https://github.com/FrankieeW/magpie-federation.git"
   },
-  "homepage": "https://github.com/FrankieeW/magpie-route-inspector#readme",
+  "homepage": "https://github.com/FrankieeW/magpie-federation#readme",
   "bugs": {
-    "url": "https://github.com/FrankieeW/magpie-route-inspector/issues"
+    "url": "https://github.com/FrankieeW/magpie-federation/issues"
   },
   "magpie": {
-    "name": "路由观测",
-    "page": {
-      "title": "Route Inspector",
-      "titles": {
-        "zh": "路由观测"
-      },
-      "file": "page/index.html",
-      "service": {
-        "port": 3487,
-        "option": "port"
-      }
-    },
-    "options": {
-      "port": 3487
-    },
+    "name": "Magpie Federation",
     "summary": {
-      "en": "See where each request went across machines (tries, fallbacks, usage), and combine model pools between Magpies: add a remote pool to a local one, or the reverse, with preview and undo.",
-      "zh": "查看请求跨机器的路由（尝试、回退、用量），并在多台 Magpie 之间组合模型池：把远端池子加进本机池子，或反过来；修改前预览，可撤销。"
+      "en": "Import each remote provider separately with its server and source, and connect MCP as a hub or as separate namespaces.",
+      "zh": "将远端各家供应商分别接入原生列表，保留服务器与来源。MCP 可整台接入，也可按命名空间分别接入。"
     }
   },
   "devDependencies": {

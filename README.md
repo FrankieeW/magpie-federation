@@ -1,204 +1,108 @@
-# magpie-route-inspector
+# magpie-federation
 
-以 Magpie 插件形式提供跨机器路由链路、来源归属和模型池选择的展示与解释，并在多台 Magpie 之间灵活组合模型池。首期围绕 Magpie #2114 和 #2110。[#2114](https://github.com/yetone/magpie/issues/2114) · [#2110](https://github.com/yetone/magpie/issues/2110)
+把远端 Magpie 的各家供应商分别接入本机的原生供应商列表，保留服务器、供应商和模型的归属。MCP 接入资源库，可以整台服务器接入，也可以按远端 MCP 的工具命名空间拆开。
 
-## 当前实现
+例如远端 `netcup` 同时配置了 `codex` 和 `deepseek`，本机将看到两个独立供应商。
 
-插件页面有两个视图。
+```text
+供应商
+  Codex · netcup
+    codex/gpt-5
+    codex/gpt-5-mini
+  DeepSeek · netcup
+    deepseek/deepseek-chat
+  路由组 · netcup
+    group/smart
 
-- **模型池**：把多台 Magpie 的池子并排查看和修改。
-  - 远端的池子或模型可以一键加入本机池子。
-  - 远端也安装本插件并开启 peer 接口后，可以从本机修改远端的池子，例如把本机的模型加进远端池子。
-  - 每次修改先预览将执行的 `magpie group set` 命令和前后成员，确认后才执行。写入后读回核对，并记入变更日志，可一键撤销。
-  - 跨机器引用使用 Magpie 原生的 Remote magpie：远端池子在本机名为 `<远端 provider id>/group/<id>`。只列出目标机器的 Magpie 实际提供的成员；会绕回目标机器自身的池子，Magpie 不会提供，因此不会形成跨机器循环。
-- **路由观测**：按远端和会话 ID 观察会话的最新路由，包括尝试顺序、失败原因、耗时、最终回答者（含供应商），以及规则与分类证据。
-  - 已经看到的路由记在本机（`$XDG_STATE_HOME/magpie-route-inspector/routes.jsonl`，权限 600）。刷新或重启插件后仍在；回退不会因同一会话的下一个请求而消失。远端接口仍然只给最新一条，没被这个页面看到过的请求不会补齐。
-  - 路由完成后才读取用量。未知费用与已知零价分开显示。
-  - 本机最近带会话 ID 的路由可以选来观测，不必手填。没有会话 ID 的请求选不出来。
-  - 本机一跳和远端路由只在能唯一对上时关联：响应 ID 相同，或者没有互相矛盾的响应 ID、且时间和模型只有一条对得上。配置里的远端 id 需要和本机 Remote magpie 的 provider id 一致。对不上、或有多条都像，会标明，不猜测。
-  - 关联上之后，费用只合计远端实际执行、且价格已知的记录。本机把这次调用转给远端的费用不重复计算。没关联上、或远端没有可计价记录时，不求和。
-
-远端的 `/v1/magpie/route` 只给出会话的最新一条记录，所以完整历史只覆盖这个插件观测过的请求。
-
-## 工作方式
-
-```
-本机 Magpie ── 插件 console（127.0.0.1:3487）── 页面
-  读：providers.json 中的 groups、本机网关 /v1/models
-  写：本机 magpie group set …
-  │
-  └─ HTTPS + 远端网关密钥 ─▶ 远端反向代理 /inspector/ ─▶ 远端插件 peer（127.0.0.1:3488）
-                                                         核验密钥：远端网关 /v1/magpie/me
-                                                         读写：远端 providers.json / magpie group set
+资源库 / MCP
+  mf-netcup-mcp-<hash>          # 整台接入
+  或
+  mf-netcup-mcp-docs-<hash>     # 按命名空间接入
+  mf-netcup-mcp-github-<hash>
 ```
 
-插件用 TypeScript 编写，由 Magpie 自带的 Bun 直接加载，不需要构建步骤；页面脚本在服务启动时由 Bun 编译。
+每个供应商使用 Magpie 原生的供应商行和编辑页，展开后查看自己的模型。折叠是原生界面的查看状态，所有已导入模型都可以正常调用。模型名字也带远端供应商 id 和服务器 id，同名模型可以区分来源。路由组使用独立的来源入口，仍由远端执行路由。
 
-## 安装
+包内的命令发现远端目录，为各家供应商生成独立的 Magpie 插件钩子，并通过 `magpie plugin add` 注册。钩子使用宿主的账号接口启用受管理的本机连接。本机供应商 id 的形式是 `mf-<server>-<provider>-<hash>`，模型 API id 保留远端的 `<provider>/<model>`。插件通过远端网关调用。
 
-需要 Magpie ≥ 0.1.3285（已在 0.1.3285 上验证）。
+## 连接服务器
+
+需要 Bun 和 Magpie。当前开发验证使用 Magpie 0.1.3302。
+
+从仓库运行。
 
 ```sh
-magpie plugin add /path/to/magpie-route-inspector
-magpie plugin options magpie-route-inspector '{"port":3487}'   # 可选，默认 3487
+bun install
+export NETCUP_MAGPIE_KEY='远端 Magpie 的网关密钥'
+bun run connect netcup url=https://magpie.example.com keyEnv=NETCUP_MAGPIE_KEY name=netcup
 ```
 
-打开 Magpie 侧栏的 **Route Inspector**。没有 Magpie 窗口时，可以运行 `bun run start` 启动同样的服务。
+安装包提供 `magpie-federation` 命令，对应的调用方式如下。
 
-## 配置：本机（控制台）
+```sh
+magpie-federation connect netcup url=https://magpie.example.com keyEnv=NETCUP_MAGPIE_KEY
+magpie-federation sync
+```
 
-配置文件为 `$XDG_CONFIG_HOME/magpie-route-inspector/config.json`，默认是 `~/.config/magpie-route-inspector/config.json`，权限请设为 600：
+`connect` 保存这台服务器并同步目录。`sync` 重新发现配置中的所有服务器，生成各家供应商的入口。注册过程中失败可以再次运行 `sync`，继续完成已经记录的操作。
+
+可选参数如下。
+
+| 参数 | 行为 |
+| --- | --- |
+| `name=netcup` | 服务器的显示名称，默认使用服务器 id |
+| `providers=codex,deepseek,group` | 只导入这些远端供应商，省略时导入目录中的所有来源 |
+| `mcp=hub` | 默认值，将远端 MCP hub 接入一个资源库条目 |
+| `mcp=servers` | 按远端 hub 暴露的工具命名空间分别接入资源库 |
+| `mcp=off` | 只接入模型供应商 |
+
+远端通过 `/v1` 的 `mcp_hub` 声明 MCP 能力。没有开启 hub 的服务器可以正常导入模型供应商。MCP 首次接入时不分配 Agent，在 Magpie 资源库里选择使用它的 Agent，并使用原生工具开关。
+
+`mcp=servers` 使用远端工具名 `<namespace>__<tool>` 中第一个 `__` 之前的部分分组。它保留远端暴露的命名空间和工具名。命名空间含有 `__` 或被远端截短时，可用 `mcp=hub` 保留完整 hub。
+
+## 配置
+
+配置文件为 `$XDG_CONFIG_HOME/magpie-federation/config.json`，默认路径是 `~/.config/magpie-federation/config.json`。可用 `MAGPIE_FEDERATION_CONFIG` 指定其他文件。
 
 ```json
 {
-  "remotes": [
+  "port": 3487,
+  "servers": [
     {
-      "id": "vps",
-      "name": "vps",
+      "id": "netcup",
+      "name": "netcup",
       "url": "https://magpie.example.com",
-      "keyEnv": "VPS_MAGPIE_KEY",
-      "peer": true,
-      "accountAliases": { "account@example.com": "工作账号" }
+      "keyEnv": "NETCUP_MAGPIE_KEY",
+      "mcp": "hub"
     }
   ]
 }
 ```
 
-- `url`：远端网关的地址。公网地址必须用 `https://`；明文 `http://` 只允许回环、内网、Tailscale（100.64.0.0/10、`*.ts.net`）和 `.local` 地址。
-- `key` / `keyEnv`：远端的网关密钥。`keyEnv` 从插件宿主进程的环境变量读取；从图形界面启动的 Magpie 不一定继承终端里的环境变量。
-- `peer`：远端插件的 peer 接口。`true` 表示 `<url 的 origin>/inspector/`，也可以写完整地址。不填时只能观察路由，不能管理远端池子。
-- 要在本机池子里使用远端的池子或模型，本机 Magpie 需要先把远端加为 Remote magpie：`magpie provider add remote-magpie <key> url=… id=vps`。
+`keyEnv` 从插件宿主的环境读取。图形界面启动的 Magpie 需要继承这个环境变量。也可以在权限为 `600` 的配置文件中使用 `key` 字段保存网关密钥。命令生成配置和插件文件时使用 `600` 权限，MCP 本机连接令牌由命令随机生成。
 
-修改本机池子不需要任何配置。
+公网地址使用 HTTPS。HTTP 只接受回环、内网和 Tailscale 地址。远端请求拒绝重定向，避免把网关密钥带到其他地址。
 
-## 配置：远端（peer）
+模型目录保留远端报告的上下文长度、输出上限、输入输出模态、推理档位、服务档位和价格。对话请求按模型的 `native_endpoints` 选择 Chat Completions、Responses 或 Anthropic Messages，并保持响应流、会话标识及远端模型 id。实际供应商账号仍由远端选择。
 
-在远端机器上同样安装本插件，并写入配置：
+MCP 使用只监听 `127.0.0.1` 的转发服务，随 Magpie 插件宿主运行。资源库条目用随机令牌连接这个服务，远端网关密钥由服务读取。按命名空间接入时，工具列表及调用都限制在对应命名空间。
 
-```json
-{ "peer": { "listen": "127.0.0.1:3488", "writers": ["laptop"] } }
-```
+## 升级已有配置
 
-- `listen`：只能是回环、内网或 Tailscale 地址。公网访问请放在 HTTPS 反向代理之后，例如 Caddy：
+配置解析器接受旧版的 `remotes` 数组，可将原配置复制到新配置路径后执行 `sync`。旧版的观测、账号别名和 peer 写入配置不参与新的供应商接入。
 
-  ```
-  magpie.example.com {
-    handle_path /inspector/* {
-      reverse_proxy 127.0.0.1:3488
-    }
-    reverse_proxy 127.0.0.1:3425
-  }
-  ```
+使用新入口替代已有的 Remote magpie 时，先为 Agent 选择新导入的具体供应商和模型，再从 Magpie 移除旧入口。本插件通过独立的供应商 id 接入，内置 `remote-magpie` preset 的实现由 Magpie 管理。
 
-  peer 同时接受带前缀和不带前缀的路径；前缀可以用 `basePath` 修改。
-- 认证：调用方使用远端 Magpie 自己的网关密钥，由远端 Magpie 的 `/v1/magpie/me` 核验，结果缓存 30 秒；在 Magpie 中停用密钥后，插件也随之拒绝。
-  - 任何有效密钥（包括只读密钥）都可以查看池子和预览修改。
-  - 修改需要密钥同时满足：非只读、无预算限制、名称列在 `writers` 中。默认不允许任何修改。
-- 浏览器请求（带 `Origin` 或 `Sec-Fetch-*`）一律拒绝；失败的认证会被限流。
-- peer 配置只在插件启动时读取，修改后需重启插件（`magpie plugin off` 再 `on`，或重启 Magpie）。无界面的 `magpie serve` 会自行启动插件宿主，重启后 peer 自动恢复。
+生成的连接插件引用当前安装目录。移动仓库或升级安装路径后，重新执行 `sync` 更新引用。
 
-## 权限与密钥
-
-| 能力 | 需要 |
-|---|---|
-| 观察远端路由（`/v1/magpie/route`） | 远端的完整共享密钥（Magpie 会拒绝只读密钥）。受限额的密钥只能看到它自己发出的请求 |
-| 查看、预览远端池子 | 任意有效的远端网关密钥（只读即可） |
-| 修改远端池子 | 列在远端 `peer.writers` 中、非只读、无预算限制的密钥 |
-| 修改本机池子 | 不需要（本机页面由令牌保护） |
-
-## 安全设计
-
-- 控制台只监听 127.0.0.1，校验 Host 以防 DNS rebinding，并为每个进程生成随机令牌。修改请求只接受 `Origin: null`（Magpie 的沙箱页面）或同源请求，且必须是 `application/json`。
-- 读取 providers.json 时只保留 groups，提供商密钥立即丢弃。写入一律通过 `magpie group set`（参数数组，不经 shell）。新成员必须是目标机器 `/v1/models` 中的确切 ID，不接受通配、正则或列表。
-- 修改前比对当前成员是否与预览时一致，不一致则返回 409。同一进程内的修改串行执行，写入后读回核对。
-- 变更日志保存在 `$XDG_STATE_HOME/magpie-route-inspector/changes.jsonl`（权限 600），用于撤销。
-- 远端文本在展示前脱敏，包括网关密钥、账号标识、邮箱和 Bearer 令牌。
-- 如果插件宿主找不到 `magpie` 命令，请设置环境变量 `MAGPIE_BIN`。
-- 控制台拒绝带有反向代理转发头（`X-Forwarded-For`、`Forwarded` 等）的请求。Magpie 自己的 magpie web 代理会去掉这些头，所以不受影响；误把反向代理指向控制台时，也不会因此暴露出去。
-- peer 只对需要请求本机 Magpie 核验的密钥计入失败限流，并发请求不会超额。缺少认证头的请求和已缓存的结果不计入；验证通过过的密钥不受限流影响，因此扫描流量无法把正常的远端拒之门外。
-- 撤销按变更日志中记录的原成员恢复，包括通配成员和当前离线的远端成员；结果与修改前的状态核对。变更日志写入失败时，修改照常报告，同时提示这次修改无法撤销。
-- 插件宿主重启或同时存在两个宿主时，后启动的一方先待命，等端口空出后立即接管，因此控制台和 peer 不会出现无人监听的空档。
-- 页面只允许三种来源嵌入：Magpie 窗口（`wails:`、`http://wails.localhost`，取自 Magpie 自己的窗口测试）、magpie web（`'self'`，与 Magpie 对自身插件页面的策略一致）以及直接打开。其他网站无法通过嵌入页面诱导点击。如有其他来源需要嵌入，可用插件选项 `frameAncestors` 追加，例如 `magpie plugin options magpie-route-inspector '{"frameAncestors":["https://magpie.example.com"]}'`。
-- 控制台只接受运行 Magpie 的那个系统用户的连接，同一台机器上的其他账号读不到页面令牌：
-  - Linux：读取 `/proc/net/tcp`，确认连接的另一端属于当前用户；
-  - macOS：用 `lsof` 确认，它只能看到当前用户的进程；
-  - 其他平台不做这项检查。
-- 调整顺序需要整体改写成员列表，而 Magpie 的命令行没有"比较后再写入"。执行前会再核对一次，但如果有人恰好在命令执行的那一刻修改同一个池子，仍可能覆盖对方的改动；写入后的核对会提示结果与预期不一致。追加和移出只改动单个成员，不受影响。
-
-## 开发与验证
+## 开发验证
 
 ```sh
-bun install
-bun run typecheck   # 服务端与页面两套 tsconfig
-bun test            # 单元与集成测试
+bun run typecheck
+bun test
+bun run e2e
 ```
 
-端到端验证在两个隔离的沙箱 Magpie 上进行，不触碰真实配置。每个沙箱有独立的 `HOME`、`XDG_*` 目录和网关端口，并关闭自动更新：
+端到端检查创建两套独立的 `HOME` 和 `XDG_*` 目录，关闭沙箱自动更新，启动两台真实 Magpie，并使用本机已有的 Bun。两台上游供应商提供同名模型，用于验证导入后身份各自独立、调用到达相应供应商。另有两个测试 MCP，用于验证分组目录和实际工具调用。检查结束后关闭沙箱进程。
 
-```sh
-bun run sandbox up      # 启动 A（本机角色）与 B（远端角色），互加 Remote magpie，安装插件，打印下一条命令
-bun run e2e             # 按 up 打印的环境变量运行：用 Playwright 驱动页面
-bun run sandbox down
-```
-
-E2E 脚本会把远端池子加入本机池子、调整远端池子顺序、撤销这两次修改，并观察一条回退路由。每一步都对照两台机器的 providers.json 核对结果。
-
-## 项目目标
-
-
-期望展示的调用链为下图。
-
-```mermaid
-flowchart LR
-    A["本地 Agent"] --> B["本地 Magpie"]
-    B --> C["Remote Magpie"]
-    C --> D["云端路由组"]
-    D --> E["实际供应商与模型"]
-    E --> F["实际账号或 Key 别名"]
-```
-
-先为一个模型池建立完整的选择记录，再用这些记录解释和改进池内选择。
-
-智能展示将一次调用的链路、规则、尝试结果、耗时和用量串联起来，让用户理解为什么选中当前来源、为什么发生回退、时间花在哪里，以及费用如何计价。每条解释可追溯到对应记录和时间范围，并标明观测事实、推断或待确认信息。页面根据持续调用数据识别延迟异常、重复限流、失败集中和缓存命中变化，再提供有依据的诊断与调优建议。
-
-| 阶段 | 目标 | 完成后用户能回答的问题 |
-| --- | --- | --- |
-| P0 | 展示本地与远端的完整路由链路 | 这次请求经过了哪些节点，最终由谁回答 |
-| P0 | 展示尝试顺序、错误、耗时和回退结果 | 为什么换了来源，在哪一步发生了限流、超时或失败 |
-| P0 | 支持多个 Remote Magpie，隔离各自的会话和更新流 | 哪条链路属于哪台远端、哪个会话 |
-| P1 | 关联云端用量、价格和费用估值 | 这笔调用能否计价，估值依据是什么，费用属于哪个来源 |
-| P2 | 解释一个模型池内的选择 | 哪条规则命中，分类器给出了什么结果，哪些候选参与了选择 |
-| P2 | 将调用记录转成可追溯的解释与异常提示 | 为什么这样选择，哪里出现异常，解释依据来自哪些记录 |
-| P3 | 根据真实调用反馈提出池内调优建议 | 调整成员、优先级或策略后，成功率、延迟和费用发生了什么变化 |
-
-首期链路展示需要覆盖以下行为。
-
-- 关联本地与远端的同一请求。结合远端 provider 标识、会话、路由序号及可用的请求标识，区分同一会话里的连续调用和并发调用。
-- 展示请求入口、远端分组、实际模型、供应商、账号别名、各次尝试的状态与耗时，并高亮最终回答者。
-- 跟随路由状态实时更新，复用订阅或长轮询，控制跨公网查询频率。
-- 为无权限、离线、版本不兼容和关联信息缺失提供明确状态，展示已经取得的链路。
-- 通过宿主或插件后端访问远端，向页面提供所需的最小数据。凭据由服务端保管，界面展示账号或 Key 的别名。
-
-费用归属需要使用实际执行请求的远端记录，并保留数据来源、计价状态和时间。明确区分已知零价、价格未知、按 token 单价计算的估值、订阅额度消耗及供应商实际账单。同一调用在本地和云端的记录应关联展示，汇总时按实际调用去重。
-
-单池调优以已记录的选择与结果为依据。观察候选可用性、额度、首 token 延迟、完成时间、错误率、费用估值和会话保持情况。真实任务的质量反馈采用可核验结果，例如 Lean 编译、证明检查或 Rust 测试。建议应包含依据、预期影响、配置差异和回滚方式。
-
-插件接入需要先完成能力验证。
-
-- 核对目标 Magpie 版本对插件页面、页面桥接、请求观察及插件后端通信的支持。
-- 以插件页面承载完整链路，评估通过 `magpie.page.replaces = "routing"` 接入 Routing 入口。
-- 官方页面桥接已公开 `usage:summary` 和 `providers:list` 等读取能力。路由明细、远端会话和账号数据的访问方式列为首项验证，明确需要的宿主接口或插件后端能力。
-- 优先复用远端 route、usage 和 quota 数据，在确认权限和关联语义后确定采集方式。
-
-上述接入方向依据官方插件文档。页面替换能力与数据读取能力需要分别验证。[Magpie 插件文档](https://usemagpie.ai/docs/plugins)
-
-首期验收使用真实的“本地 Magpie → 远端 Magpie → 供应商”调用完成。
-
-1. 一次成功调用能够对上两端记录，并展示最终供应商、模型和账号别名。
-2. 一次发生回退的调用能够展示失败节点、原因、尝试顺序和最终结果。
-3. 两个远端或两个并发会话的状态能够正确区分。
-4. 远端离线、无权限或缺少数据时，页面能够展示明确状态并恢复更新。
-5. 费用未知与已知零价有明确区分，跨层记录能够关联和去重。
-6. 已取得的选择原因和回退原因能够关联到原始记录，信息缺失处有明确标记。
-
-后续的自动选模型体验参考 #1192。动态维护模型池的思路参考 #2347，结合可观测数据形成可审核的调优建议。[#1192](https://github.com/yetone/magpie/issues/1192) · [#2347](https://github.com/yetone/magpie/issues/2347)
+历史路由观测代码保留在源码中供参考。发布文件由 `package.json` 的 `files` 指定，插件入口和包清单仅接入供应商及 MCP。

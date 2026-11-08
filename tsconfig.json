@@ -15,5 +15,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["index.ts", "scripts/**/*.ts", "src/shared/**/*.ts", "src/server/**/*.ts", "src/machine/**/*.ts", "src/peer/**/*.ts", "test/**/*.ts"]
+  "include": ["index.ts", "scripts/**/*.ts", "src/federation/**/*.ts", "src/shared/**/*.ts", "src/server/**/*.ts", "src/machine/**/*.ts", "src/peer/**/*.ts", "test/**/*.ts"]
 }

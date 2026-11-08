@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "magpie-route-inspector",
+      "name": "magpie-federation",
       "devDependencies": {
         "@types/bun": "^1.4.4",
         "playwright-core": "^1.65.0",
